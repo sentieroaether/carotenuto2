@@ -5,8 +5,7 @@ from io import BytesIO
 import zipfile
 import os
 from datetime import datetime
-import mammoth
-from weasyprint import HTML
+import pdfkit
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
@@ -149,19 +148,20 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
     buffer.seek(0)
     return buffer
 
-# Funzione per convertire Word in HTML con mammoth
-def converti_word_in_html(file):
-    with file:
-        result = mammoth.convert_to_html(file)
-        html = result.value  # Il contenuto HTML estratto
-        return html
+# Funzione per convertire Word in PDF
+def convert_to_pdf(doc_buffer):
+    options = {
+        'page-size': 'A4',
+        'margin-top': '0.75in',
+        'margin-right': '0.75in',
+        'margin-bottom': '0.75in',
+        'margin-left': '0.75in',
+        'encoding': "UTF-8",
+        'no-outline': None
+    }
 
-# Funzione per generare PDF da HTML con WeasyPrint
-def genera_pdf_da_html(html_content):
-    buffer = BytesIO()
-    HTML(string=html_content).write_pdf(buffer)
-    buffer.seek(0)
-    return buffer
+    pdf_buffer = pdfkit.from_file(doc_buffer, False, options=options)
+    return pdf_buffer
 
 # Funzione di login
 def login():
@@ -184,26 +184,65 @@ def main():
         st.sidebar.title("Portale ricorso D.I. | Studio Carotenuto")
 
         st.title("Generatore automatico di Ricorsi D.I.")
-        uploaded_word = st.file_uploader("Carica un documento Word (.docx)", type=["docx"])
+        df1, df2, df3 = carica_file()
         
-        if uploaded_word is not None:
-            st.write("File caricato con successo!")
+        if df1 is not None and df2 is not None and df3 is not None:
+            st.write("File caricati con successo!")
 
-            # Converte il file Word in HTML
-            html_content = converti_word_in_html(uploaded_word)
+            try:
+                df1 = normalizza_colonne(df1)
+                df2 = normalizza_colonne(df2)
+                df3 = normalizza_colonne(df3)
 
-            # Visualizza l'anteprima dell'HTML
-            st.markdown(html_content, unsafe_allow_html=True)
+                df1 = df1.rename(columns={"codice_soggetto": "codice_soggetto"})
+                df2 = df2.rename(columns={"bpartner": "codice_soggetto"})
+                df3 = df3.rename(columns={"soggetto": "codice_soggetto"})
+            except KeyError as e:
+                st.error(f"Errore durante la rinominazione delle colonne: {e}")
+                return
 
-            if st.button("Genera PDF"):
-                pdf_buffer = genera_pdf_da_html(html_content)
-                
-                st.download_button(
-                    label="Scarica il PDF generato",
-                    data=pdf_buffer,
-                    file_name="documento_generato.pdf",
-                    mime="application/pdf"
-                )
+            if "codice_soggetto" not in df1.columns or "codice_soggetto" not in df2.columns or "codice_soggetto" not in df3.columns:
+                st.error("Una o più colonne 'codice_soggetto' non sono state trovate.")
+                return
+
+            try:
+                df_combinato = pd.merge(df1, df2, on='codice_soggetto', how='left')
+                df_combinato = pd.merge(df_combinato, df3, on='codice_soggetto', how='left')
+                df_combinato['pod'] = df_combinato['pod'].astype(str)
+        
+            except KeyError as e:
+                st.error(f"Errore durante l'unione dei file: {e}")
+                return
+
+            codici_soggetto = df_combinato['codice_soggetto'].unique()
+            codici_soggetto = [int(float(c)) for c in codici_soggetto if pd.notna(c)]
+
+            codici_selezionati = st.multiselect("Seleziona i codici soggetto per generare i documenti:", codici_soggetto)
+            if st.button("Genera documenti per i soggetti selezionati"):
+                if codici_selezionati:
+                    zip_buffer = BytesIO()
+
+                    with zipfile.ZipFile(zip_buffer, "w") as zip_file:
+                        for codice in codici_selezionati:
+                            dati_filtro = df_combinato[df_combinato['codice_soggetto'] == codice].iloc[0]
+                            df_fatture = df_combinato[df_combinato['codice_soggetto'] == codice]
+                            doc_buffer = genera_documento_word(dati_filtro, df_fatture, template_path="decreto.docx")
+
+                            nome_file = formatta_numero_intero(dati_filtro['codice_soggetto'])
+                            zip_file.writestr(f"{nome_file}.docx", doc_buffer.getvalue())
+
+                            pdf_buffer = convert_to_pdf(doc_buffer)
+                            zip_file.writestr(f"{nome_file}.pdf", pdf_buffer)
+
+                    zip_buffer.seek(0)
+                    st.download_button(
+                        label="Scarica tutti i documenti generati (ZIP)",
+                        data=zip_buffer,
+                        file_name="documenti_generati.zip",
+                        mime="application/zip"
+                    )
+                else:
+                    st.warning("Seleziona almeno un codice soggetto prima di generare i documenti.")
     else:
         login()
 

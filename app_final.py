@@ -4,12 +4,12 @@ from docx import Document
 from io import BytesIO
 import zipfile
 import os
-import pythoncom
-import win32com.client as win32
+import pypandoc  # Usa pypandoc per la conversione da Word a PDF
 from datetime import datetime
 import numpy as np
 from docx import Document
 from io import BytesIO
+import pythoncom
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
@@ -34,34 +34,26 @@ def valore_o_spazio(valore):
 # Funzione per rimuovere i decimali
 def rimuovi_decimali(valore):
     try:
-        # Applica la rimozione dei decimali solo su valori numerici validi
         return str(int(float(valore)))
     except (ValueError, TypeError):
-        # Se il valore non è un numero o non può essere convertito, restituiscilo così com'è
         return str(valore)
 
 def formatta_pod(valore):
     try:
-        # Verifica se il valore è numerico e convertilo in intero, mantenendo gli zeri iniziali
         if isinstance(valore, (int, float)):
-            # Converte in intero se float e poi in stringa senza perdere zeri iniziali
             valore = '{:0.0f}'.format(float(valore))
-        return str(valore).upper().strip()  # Mantiene la formattazione in maiuscolo e rimuove eventuali spazi
+        return str(valore).upper().strip()
     except (ValueError, TypeError):
-        # Se c'è un errore, restituisci il valore così com'è
         return str(valore)
-    
-# Funzione per formattare i numeri come stringa senza notazione scientifica
+
 def formatta_numero_intero(numero):
     try:
-        numero_float = float(numero)  # Prima converti in float per evitare errori
-        numero_intero = int(numero_float)  # Converti in intero senza notazione scientifica
-        return '{:d}'.format(numero_intero)  # Restituisci come stringa senza notazione
+        numero_float = float(numero)
+        numero_intero = int(numero_float)
+        return '{:d}'.format(numero_intero)
     except ValueError:
-        return str(numero)  # Se non è un numero valido, restituisci il valore originale come stringa
+        return str(numero)
 
-
-# Funzione per formattare le date in italiano
 def formatta_data_italiana(data):
     mesi = [
         "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
@@ -72,29 +64,20 @@ def formatta_data_italiana(data):
     anno = data.year
     return f"{giorno} {mese} {anno}"
 
-# Funzione per convertire un documento Word in PDF
+# Funzione per convertire un documento Word in PDF con pypandoc
 def convert_to_pdf(word_file, output_pdf_path):
-    pythoncom.CoInitialize()
-
     try:
-        # Creazione di un file temporaneo con il nome corretto
-        temp_file_path = "temp_decreto.docx"  # File temporaneo
-        with open(temp_file_path, "wb") as temp_word_file:
-            temp_word_file.write(word_file.getvalue())  # Scrivi il contenuto del documento temporaneo
+        temp_word_path = "temp_document.docx"
+        with open(temp_word_path, "wb") as f:
+            f.write(word_file.getvalue())
 
-        word = win32.Dispatch("Word.Application")
-        word.Visible = False
+        # Converte il file Word in PDF usando pypandoc
+        pypandoc.convert_file(temp_word_path, 'pdf', outputfile=output_pdf_path)
 
-        # Apri il file temporaneo Word e convertilo in PDF
-        doc = word.Documents.Open(os.path.abspath(temp_file_path))
-        doc.SaveAs(os.path.abspath(output_pdf_path), FileFormat=17)  # 17 è il formato PDF in Word
-        doc.Close()
-        word.Quit()
-
-        # Elimina il file temporaneo dopo la conversione
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-
+        # Rimuovi il file temporaneo
+        if os.path.exists(temp_word_path):
+            os.remove(temp_word_path)
+       
     except Exception as e:
         st.error(f"Errore durante la conversione in PDF: {e}")
     finally:

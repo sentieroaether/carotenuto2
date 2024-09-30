@@ -64,6 +64,10 @@ def formatta_data_italiana(data):
 # Funzione per convertire un documento Word in PDF con pdfkit
 def convert_to_pdf(word_file, output_pdf_path):
     try:
+        # Specifica il percorso completo di wkhtmltopdf su Windows
+        path_wkhtmltopdf = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'  # Percorso corretto
+        config = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
+
         # Converte il file Word in HTML
         document = Document(word_file)
         html_content = ""
@@ -71,7 +75,7 @@ def convert_to_pdf(word_file, output_pdf_path):
             html_content += f"<p>{paragraph.text}</p>"
 
         # Usa pdfkit per convertire l'HTML in PDF
-        pdfkit.from_string(html_content, output_pdf_path)
+        pdfkit.from_string(html_content, output_pdf_path, configuration=config)
        
     except Exception as e:
         st.error(f"Errore durante la conversione in PDF: {e}")

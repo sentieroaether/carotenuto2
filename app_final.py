@@ -65,8 +65,13 @@ def formatta_data_italiana(data):
     return f"{giorno} {mese} {anno}"
 
 # Funzione per convertire un documento Word in PDF con pypandoc
+import pypandoc
+
 def convert_to_pdf(word_file, output_pdf_path):
     try:
+        # Scarica pandoc automaticamente se non è installato
+        pypandoc.download_pandoc()
+
         temp_word_path = "temp_document.docx"
         with open(temp_word_path, "wb") as f:
             f.write(word_file.getvalue())
@@ -80,6 +85,7 @@ def convert_to_pdf(word_file, output_pdf_path):
        
     except Exception as e:
         st.error(f"Errore durante la conversione in PDF: {e}")
+
     
 
 # Funzione per caricare i file Excel o CSV

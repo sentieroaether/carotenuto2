@@ -4,9 +4,12 @@ from docx import Document
 from io import BytesIO
 import zipfile
 import os
+import pythoncom
+import win32com.client as win32
 from datetime import datetime
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+import numpy as np
+from docx import Document
+from io import BytesIO
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
@@ -24,29 +27,39 @@ if 'password' not in st.session_state:
 
 # Funzione per sostituire NaN con stringa vuota
 def valore_o_spazio(valore):
-    return "" if pd.isna(valore) or valore == "nan" or valore is None else str(valore)
+    if pd.isna(valore) or valore == "nan" or valore == None:
+        return ""
+    return str(valore)
 
 # Funzione per rimuovere i decimali
 def rimuovi_decimali(valore):
     try:
+        # Applica la rimozione dei decimali solo su valori numerici validi
         return str(int(float(valore)))
     except (ValueError, TypeError):
+        # Se il valore non è un numero o non può essere convertito, restituiscilo così com'è
         return str(valore)
 
 def formatta_pod(valore):
     try:
+        # Verifica se il valore è numerico e convertilo in intero, mantenendo gli zeri iniziali
         if isinstance(valore, (int, float)):
+            # Converte in intero se float e poi in stringa senza perdere zeri iniziali
             valore = '{:0.0f}'.format(float(valore))
-        return str(valore).upper().strip()
+        return str(valore).upper().strip()  # Mantiene la formattazione in maiuscolo e rimuove eventuali spazi
     except (ValueError, TypeError):
+        # Se c'è un errore, restituisci il valore così com'è
         return str(valore)
-
+    
 # Funzione per formattare i numeri come stringa senza notazione scientifica
 def formatta_numero_intero(numero):
     try:
-        return '{:d}'.format(int(float(numero)))
+        numero_float = float(numero)  # Prima converti in float per evitare errori
+        numero_intero = int(numero_float)  # Converti in intero senza notazione scientifica
+        return '{:d}'.format(numero_intero)  # Restituisci come stringa senza notazione
     except ValueError:
-        return str(numero)
+        return str(numero)  # Se non è un numero valido, restituisci il valore originale come stringa
+
 
 # Funzione per formattare le date in italiano
 def formatta_data_italiana(data):
@@ -59,6 +72,34 @@ def formatta_data_italiana(data):
     anno = data.year
     return f"{giorno} {mese} {anno}"
 
+# Funzione per convertire un documento Word in PDF
+def convert_to_pdf(word_file, output_pdf_path):
+    pythoncom.CoInitialize()
+
+    try:
+        # Creazione di un file temporaneo con il nome corretto
+        temp_file_path = "temp_decreto.docx"  # File temporaneo
+        with open(temp_file_path, "wb") as temp_word_file:
+            temp_word_file.write(word_file.getvalue())  # Scrivi il contenuto del documento temporaneo
+
+        word = win32.Dispatch("Word.Application")
+        word.Visible = False
+
+        # Apri il file temporaneo Word e convertilo in PDF
+        doc = word.Documents.Open(os.path.abspath(temp_file_path))
+        doc.SaveAs(os.path.abspath(output_pdf_path), FileFormat=17)  # 17 è il formato PDF in Word
+        doc.Close()
+        word.Quit()
+
+        # Elimina il file temporaneo dopo la conversione
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+    except Exception as e:
+        st.error(f"Errore durante la conversione in PDF: {e}")
+    finally:
+        pythoncom.CoUninitialize()
+
 # Funzione per caricare i file Excel o CSV
 def carica_file():
     uploaded_file1 = st.file_uploader("Carica il file ANAGRAFICHE", type=["xlsx", "csv"])
@@ -69,12 +110,15 @@ def carica_file():
         if file is not None:
             try:
                 if file.name.endswith('.xlsx'):
+                    # Escludi 'NA' dai valori NaN
                     return pd.read_excel(file, na_values=["", "null", "nan", "NaN"], keep_default_na=False)
                 elif file.name.endswith('.csv'):
+                    # Escludi 'NA' dai valori NaN
                     return pd.read_csv(file, sep=';', na_values=["", "null", "nan", "NaN"], keep_default_na=False)
             except Exception as e:
                 st.error(f"Errore nel caricamento del file {file.name}: {e}")
         return None
+
 
     df1 = leggi_file(uploaded_file1)
     df2 = leggi_file(uploaded_file2)
@@ -108,10 +152,12 @@ def compila_tabella_esistente(doc, df_combinato):
             cells[4].text = str(row.importo_pagato_totale)
             cells[5].text = str(row.residuo_ad_oggi)
             pod_value = row.pod
-            cells[6].text = formatta_pod(pod_value)
+            cells[6].text = formatta_pod(pod_value)  # Utilizza la funzione per formattare il POD
 
     except Exception as e:
         st.error(f"Errore durante la compilazione della tabella: {e}")
+
+
 
 # Funzione per generare il documento Word
 def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
@@ -119,22 +165,22 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
     data_generazione = formatta_data_italiana(datetime.now())
 
     placeholders = {
-        "{ragione_sociale}": valore_o_spazio(dati.get('ragione_sociale_x','')),
-        "{codice_fiscale}": rimuovi_decimali(valore_o_spazio(dati.get('codice_fiscale', ''))),
-        "{partita_iva}": rimuovi_decimali(valore_o_spazio(dati.get('partita_iva', ''))),
-        "{comune_residenza}": valore_o_spazio(dati.get('comune_residenza', '')),
-        "{cap_residenza}": rimuovi_decimali(valore_o_spazio(dati.get('cap_residenza', 0))),
-        "{indirizzo_residenza}": valore_o_spazio(dati.get('indirizzo_residenza', '')),
-        "{settore_contabile}": valore_o_spazio(dati.get('settore_contabile', '')),
-        "{codice_commerciale}": rimuovi_decimali(valore_o_spazio(dati.get('codice_commerciale', ''))),
-        "{codice_soggetto}": rimuovi_decimali(valore_o_spazio(dati.get('codice_soggetto', 0))),
-        "{comune_fornitura}": valore_o_spazio(dati.get('comune_fornitura', '')),
-        "{provincia_fornitura}": valore_o_spazio(dati.get('provincia_fornitura', 'NA')).replace('nan', ''),
-        "{indirizzo_fornitura}": valore_o_spazio(dati.get('indirizzo_fornitura', '')),
-        "{data_generazione}": data_generazione,
-        "{provincia_residenza}": valore_o_spazio(dati.get('provincia_residenza', 'NA')).replace('nan', ''),
-        "{pod}": formatta_pod(valore_o_spazio(dati.get('pod', ''))),
-        "{residuo_ad_oggi}": rimuovi_decimali(valore_o_spazio(dati.get('residuo_ad_oggi', ''))),
+        "{ragione_sociale}": str(valore_o_spazio(dati.get('ragione_sociale_x',''))),
+        "{codice_fiscale}": str(rimuovi_decimali(valore_o_spazio(dati.get('codice_fiscale', '')))),
+        "{partita_iva}": str(rimuovi_decimali(valore_o_spazio(dati.get('partita_iva', '')))),
+        "{comune_residenza}": str(valore_o_spazio(dati.get('comune_residenza', ''))),
+        "{cap_residenza}": str(rimuovi_decimali(valore_o_spazio(dati.get('cap_residenza', 0)))),
+        "{indirizzo_residenza}": str(valore_o_spazio(dati.get('indirizzo_residenza', ''))),
+        "{settore_contabile}": str(valore_o_spazio(dati.get('settore_contabile', ''))),
+        "{codice_commerciale}": str(rimuovi_decimali(valore_o_spazio(dati.get('codice_commerciale', '')))),
+        "{codice_soggetto}": str(rimuovi_decimali(valore_o_spazio(dati.get('codice_soggetto', 0)))),
+        "{comune_fornitura}": str(valore_o_spazio(dati.get('comune_fornitura', ''))),
+        "{provincia_fornitura}": str(valore_o_spazio(dati.get('provincia_fornitura', 'NA')).replace('nan', '')),
+        "{indirizzo_fornitura}": str(valore_o_spazio(dati.get('indirizzo_fornitura', ''))),
+        "{data_generazione}": str(data_generazione),
+        "{provincia_residenza}": str(valore_o_spazio(dati.get('provincia_residenza', 'NA')).replace('nan', '')),
+        "{pod}": str(formatta_pod(valore_o_spazio(dati.get('pod', '')))),  # Assicurati che anche il POD sia stringa
+        "{residuo_ad_oggi}": str(rimuovi_decimali(valore_o_spazio(dati.get('residuo_ad_oggi', '')))),
     }
 
     for paragraph in doc.paragraphs:
@@ -142,24 +188,12 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
             if placeholder in paragraph.text:
                 paragraph.text = paragraph.text.replace(placeholder, value)
 
+                                   
+
     compila_tabella_esistente(doc, df_combinato)
 
     buffer = BytesIO()
     doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-# Funzione per generare un PDF utilizzando reportlab
-def genera_pdf(dati):
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    p.drawString(100, 750, "Ciao, questo è un PDF generato con ReportLab!")
-    
-    # Aggiungi qui le informazioni personalizzate nel PDF
-    p.drawString(100, 730, f"Ragione sociale: {valore_o_spazio(dati.get('ragione_sociale_x',''))}")
-    p.drawString(100, 710, f"Codice Fiscale: {rimuovi_decimali(valore_o_spazio(dati.get('codice_fiscale', '')))}")
-    
-    p.save()
     buffer.seek(0)
     return buffer
 
@@ -172,7 +206,7 @@ def login():
     if st.button("Login"):
         if username == st.session_state['username'] and password == st.session_state['password']:
             st.session_state['authenticated'] = True
-            st.success("Accesso per Studio Carotenuto!")
+            st.success(f"Accesso per Studio Carotenuto!")
         else:
             st.error("Username o password errati!")
 
@@ -227,14 +261,17 @@ def main():
                             dati_filtro = df_combinato[df_combinato['codice_soggetto'] == codice].iloc[0]
                             df_fatture = df_combinato[df_combinato['codice_soggetto'] == codice]
                             doc_buffer = genera_documento_word(dati_filtro, df_fatture, template_path="decreto.docx")
-                            
+
                             nome_file = formatta_numero_intero(dati_filtro['codice_soggetto'])
                             zip_file.writestr(f"{nome_file}.docx", doc_buffer.getvalue())
 
-                            # Genera il PDF e aggiungilo al file ZIP
-                            pdf_buffer = genera_pdf(dati_filtro)
-                            zip_file.writestr(f"{nome_file}.pdf", pdf_buffer.getvalue())
+                            pdf_path = f"{nome_file}.pdf"
+                            convert_to_pdf(doc_buffer, pdf_path)
+                            with open(pdf_path, "rb") as pdf_file:
+                                zip_file.writestr(f"{nome_file}.pdf", pdf_file.read())
 
+                            os.remove(pdf_path)
+                    
                     zip_buffer.seek(0)
                     st.download_button(
                         label="Scarica tutti i documenti generati (ZIP)",
@@ -242,8 +279,8 @@ def main():
                         file_name="documenti_generati.zip",
                         mime="application/zip"
                     )
-                else:
-                    st.warning("Seleziona almeno un codice soggetto prima di generare i documenti.")
+            else:
+                st.warning("Seleziona almeno un codice soggetto prima di generare i documenti.")
     else:
         login()
 

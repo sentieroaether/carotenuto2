@@ -9,7 +9,7 @@ from datetime import datetime
 import numpy as np
 from docx import Document
 from io import BytesIO
-import pythoncom
+
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
@@ -80,8 +80,7 @@ def convert_to_pdf(word_file, output_pdf_path):
        
     except Exception as e:
         st.error(f"Errore durante la conversione in PDF: {e}")
-    finally:
-        pythoncom.CoUninitialize()
+    
 
 # Funzione per caricare i file Excel o CSV
 def carica_file():

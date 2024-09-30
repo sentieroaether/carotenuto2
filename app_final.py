@@ -4,12 +4,9 @@ from docx import Document
 from io import BytesIO
 import zipfile
 import os
-import pypandoc  # Usa pypandoc per la conversione da Word a PDF
+import pdfkit  # Usa pdfkit per la conversione da Word a PDF
 from datetime import datetime
 import numpy as np
-from docx import Document
-from io import BytesIO
-
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
@@ -64,29 +61,20 @@ def formatta_data_italiana(data):
     anno = data.year
     return f"{giorno} {mese} {anno}"
 
-# Funzione per convertire un documento Word in PDF con pypandoc
-import pypandoc
-
+# Funzione per convertire un documento Word in PDF con pdfkit
 def convert_to_pdf(word_file, output_pdf_path):
     try:
-        # Scarica pandoc automaticamente se non è installato
-        pypandoc.download_pandoc()
+        # Converte il file Word in HTML
+        document = Document(word_file)
+        html_content = ""
+        for paragraph in document.paragraphs:
+            html_content += f"<p>{paragraph.text}</p>"
 
-        temp_word_path = "temp_document.docx"
-        with open(temp_word_path, "wb") as f:
-            f.write(word_file.getvalue())
-
-        # Converte il file Word in PDF usando pypandoc
-        pypandoc.convert_file(temp_word_path, 'pdf', outputfile=output_pdf_path)
-
-        # Rimuovi il file temporaneo
-        if os.path.exists(temp_word_path):
-            os.remove(temp_word_path)
+        # Usa pdfkit per convertire l'HTML in PDF
+        pdfkit.from_string(html_content, output_pdf_path)
        
     except Exception as e:
         st.error(f"Errore durante la conversione in PDF: {e}")
-
-    
 
 # Funzione per caricare i file Excel o CSV
 def carica_file():
@@ -98,15 +86,12 @@ def carica_file():
         if file is not None:
             try:
                 if file.name.endswith('.xlsx'):
-                    # Escludi 'NA' dai valori NaN
                     return pd.read_excel(file, na_values=["", "null", "nan", "NaN"], keep_default_na=False)
                 elif file.name.endswith('.csv'):
-                    # Escludi 'NA' dai valori NaN
                     return pd.read_csv(file, sep=';', na_values=["", "null", "nan", "NaN"], keep_default_na=False)
             except Exception as e:
                 st.error(f"Errore nel caricamento del file {file.name}: {e}")
         return None
-
 
     df1 = leggi_file(uploaded_file1)
     df2 = leggi_file(uploaded_file2)
@@ -140,12 +125,10 @@ def compila_tabella_esistente(doc, df_combinato):
             cells[4].text = str(row.importo_pagato_totale)
             cells[5].text = str(row.residuo_ad_oggi)
             pod_value = row.pod
-            cells[6].text = formatta_pod(pod_value)  # Utilizza la funzione per formattare il POD
+            cells[6].text = formatta_pod(pod_value)
 
     except Exception as e:
         st.error(f"Errore durante la compilazione della tabella: {e}")
-
-
 
 # Funzione per generare il documento Word
 def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
@@ -167,7 +150,7 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
         "{indirizzo_fornitura}": str(valore_o_spazio(dati.get('indirizzo_fornitura', ''))),
         "{data_generazione}": str(data_generazione),
         "{provincia_residenza}": str(valore_o_spazio(dati.get('provincia_residenza', 'NA')).replace('nan', '')),
-        "{pod}": str(formatta_pod(valore_o_spazio(dati.get('pod', '')))),  # Assicurati che anche il POD sia stringa
+        "{pod}": str(formatta_pod(valore_o_spazio(dati.get('pod', '')))),
         "{residuo_ad_oggi}": str(rimuovi_decimali(valore_o_spazio(dati.get('residuo_ad_oggi', '')))),
     }
 
@@ -175,8 +158,6 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
         for placeholder, value in placeholders.items():
             if placeholder in paragraph.text:
                 paragraph.text = paragraph.text.replace(placeholder, value)
-
-                                   
 
     compila_tabella_esistente(doc, df_combinato)
 

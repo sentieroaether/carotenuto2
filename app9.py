@@ -156,7 +156,7 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
         "{data_generazione}": str(data_generazione),
         "{provincia_residenza}": str(valore_o_spazio(dati.get('provincia_residenza', 'NA')).replace('nan', '')),
         "{pod}": str(formatta_pod(valore_o_spazio(dati.get('pod', '')))),
-        "{residuo_ad_oggi}": str(rimuovi_decimali(valore_o_spazio(dati.get('residuo_ad_oggi', '')))),
+        "{residuo_ad_oggi}": str(valore_o_spazio(dati.get('residuo_ad_oggi', ''))),
     }
 
     for paragraph in doc.paragraphs:

@@ -3,13 +3,8 @@ import pandas as pd
 from docx import Document
 from io import BytesIO
 import zipfile
-import os
-import pythoncom
-import win32com.client as win32
 from datetime import datetime
 import numpy as np
-from docx import Document
-from io import BytesIO
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
@@ -34,32 +29,26 @@ def valore_o_spazio(valore):
 # Funzione per rimuovere i decimali
 def rimuovi_decimali(valore):
     try:
-        # Applica la rimozione dei decimali solo su valori numerici validi
         return str(int(float(valore)))
     except (ValueError, TypeError):
-        # Se il valore non è un numero o non può essere convertito, restituiscilo così com'è
         return str(valore)
 
 def formatta_pod(valore):
     try:
-        # Verifica se il valore è numerico e convertilo in intero, mantenendo gli zeri iniziali
         if isinstance(valore, (int, float)):
-            # Converte in intero se float e poi in stringa senza perdere zeri iniziali
             valore = '{:0.0f}'.format(float(valore))
-        return str(valore).upper().strip()  # Mantiene la formattazione in maiuscolo e rimuove eventuali spazi
+        return str(valore).upper().strip()
     except (ValueError, TypeError):
-        # Se c'è un errore, restituisci il valore così com'è
         return str(valore)
     
 # Funzione per formattare i numeri come stringa senza notazione scientifica
 def formatta_numero_intero(numero):
     try:
-        numero_float = float(numero)  # Prima converti in float per evitare errori
-        numero_intero = int(numero_float)  # Converti in intero senza notazione scientifica
-        return '{:d}'.format(numero_intero)  # Restituisci come stringa senza notazione
+        numero_float = float(numero)
+        numero_intero = int(numero_float)
+        return '{:d}'.format(numero_intero)
     except ValueError:
-        return str(numero)  # Se non è un numero valido, restituisci il valore originale come stringa
-
+        return str(numero)
 
 # Funzione per formattare le date in italiano
 def formatta_data_italiana(data):
@@ -72,34 +61,6 @@ def formatta_data_italiana(data):
     anno = data.year
     return f"{giorno} {mese} {anno}"
 
-# Funzione per convertire un documento Word in PDF
-def convert_to_pdf(word_file, output_pdf_path):
-    pythoncom.CoInitialize()
-
-    try:
-        # Creazione di un file temporaneo con il nome corretto
-        temp_file_path = "temp_decreto.docx"  # File temporaneo
-        with open(temp_file_path, "wb") as temp_word_file:
-            temp_word_file.write(word_file.getvalue())  # Scrivi il contenuto del documento temporaneo
-
-        word = win32.Dispatch("Word.Application")
-        word.Visible = False
-
-        # Apri il file temporaneo Word e convertilo in PDF
-        doc = word.Documents.Open(os.path.abspath(temp_file_path))
-        doc.SaveAs(os.path.abspath(output_pdf_path), FileFormat=17)  # 17 è il formato PDF in Word
-        doc.Close()
-        word.Quit()
-
-        # Elimina il file temporaneo dopo la conversione
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
-
-    except Exception as e:
-        st.error(f"Errore durante la conversione in PDF: {e}")
-    finally:
-        pythoncom.CoUninitialize()
-
 # Funzione per caricare i file Excel o CSV
 def carica_file():
     uploaded_file1 = st.file_uploader("Carica il file ANAGRAFICHE", type=["xlsx", "csv"])
@@ -110,20 +71,25 @@ def carica_file():
         if file is not None:
             try:
                 if file.name.endswith('.xlsx'):
-                    # Escludi 'NA' dai valori NaN
                     return pd.read_excel(file, na_values=["", "null", "nan", "NaN"], keep_default_na=False)
                 elif file.name.endswith('.csv'):
-                    # Escludi 'NA' dai valori NaN
                     return pd.read_csv(file, sep=';', na_values=["", "null", "nan", "NaN"], keep_default_na=False)
             except Exception as e:
                 st.error(f"Errore nel caricamento del file {file.name}: {e}")
         return None
 
-
     df1 = leggi_file(uploaded_file1)
     df2 = leggi_file(uploaded_file2)
     df3 = leggi_file(uploaded_file3)
     
+        # Debug: Stampa le colonne di ogni file caricato
+    if df1 is not None:
+        st.write("Colonne del file ANAGRAFICHE:", df1.columns)
+    if df2 is not None:
+        st.write("Colonne del file FATTURE:", df2.columns)
+    if df3 is not None:
+        st.write("Colonne del file PRATICHE:", df3.columns)
+
     return df1, df2, df3
 
 # Funzione per normalizzare i nomi delle colonne
@@ -131,32 +97,36 @@ def normalizza_colonne(df):
     df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('.', '').str.replace("'", "")
     return df
 
+
 # Funzione per compilare la tabella nel documento Word
 def compila_tabella_esistente(doc, df_combinato):
     try:
+        # Filtra i dati eliminando le righe senza numero documento
         df_combinato = df_combinato.dropna(subset=['n_documento'])
-        table = doc.tables[0]
-        righe_da_aggiungere = len(df_combinato)
-        righe_esistenti = len(table.rows)
-
-        if righe_da_aggiungere > righe_esistenti - 1:
-            for _ in range(righe_da_aggiungere - (righe_esistenti - 1)):
+        
+        table = doc.tables[0]  # Assume che ci sia una tabella nel documento
+        
+        righe_da_aggiungere = len(df_combinato)  # Numero di righe da aggiungere
+        righe_esistenti = len(table.rows) - 1  # Righe già presenti (tranne l'intestazione)
+        
+        # Aggiungi righe se il numero di righe esistenti non è sufficiente
+        if righe_da_aggiungere > righe_esistenti:
+            for _ in range(righe_da_aggiungere - righe_esistenti):
                 table.add_row()
-
+        
+        # Popola la tabella con i dati di df_combinato
         for i, row in enumerate(df_combinato.itertuples(), 1):
             cells = table.rows[i].cells
             cells[0].text = str(row.data_reg)  
             cells[1].text = str(row.scadnetto)
             cells[2].text = str(row.n_documento)
-            cells[3].text = str(row.importo_totale)
-            cells[4].text = str(row.importo_pagato_totale)
-            cells[5].text = str(row.residuo_ad_oggi)
+            cells[3].text = str(row.affidato)
+            cells[4].text = str(row.importo_sollecitabile)
             pod_value = row.pod
-            cells[6].text = formatta_pod(pod_value)  # Utilizza la funzione per formattare il POD
+            cells[5].text = formatta_pod(pod_value)  # Utilizza la funzione per formattare il POD
 
     except Exception as e:
         st.error(f"Errore durante la compilazione della tabella: {e}")
-
 
 
 # Funzione per generare il documento Word
@@ -179,7 +149,7 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
         "{indirizzo_fornitura}": str(valore_o_spazio(dati.get('indirizzo_fornitura', ''))),
         "{data_generazione}": str(data_generazione),
         "{provincia_residenza}": str(valore_o_spazio(dati.get('provincia_residenza', 'NA')).replace('nan', '')),
-        "{pod}": str(formatta_pod(valore_o_spazio(dati.get('pod', '')))),  # Assicurati che anche il POD sia stringa
+        "{pod}": str(formatta_pod(valore_o_spazio(dati.get('pod', '')))),
         "{residuo_ad_oggi}": str(rimuovi_decimali(valore_o_spazio(dati.get('residuo_ad_oggi', '')))),
     }
 
@@ -187,8 +157,6 @@ def genera_documento_word(dati, df_combinato, template_path="decreto.docx"):
         for placeholder, value in placeholders.items():
             if placeholder in paragraph.text:
                 paragraph.text = paragraph.text.replace(placeholder, value)
-
-                                   
 
     compila_tabella_esistente(doc, df_combinato)
 
@@ -228,6 +196,10 @@ def main():
                 df2 = normalizza_colonne(df2)
                 df3 = normalizza_colonne(df3)
 
+                st.write("Colonne ANAGRAFICHE normalizzate:", df1.columns)
+                st.write("Colonne FATTURE normalizzate:", df2.columns)
+                st.write("Colonne PRATICHE normalizzate:", df3.columns)
+
                 df1 = df1.rename(columns={"codice_soggetto": "codice_soggetto"})
                 df2 = df2.rename(columns={"bpartner": "codice_soggetto"})
                 df3 = df3.rename(columns={"soggetto": "codice_soggetto"})
@@ -264,13 +236,6 @@ def main():
 
                             nome_file = formatta_numero_intero(dati_filtro['codice_soggetto'])
                             zip_file.writestr(f"{nome_file}.docx", doc_buffer.getvalue())
-
-                            pdf_path = f"{nome_file}.pdf"
-                            convert_to_pdf(doc_buffer, pdf_path)
-                            with open(pdf_path, "rb") as pdf_file:
-                                zip_file.writestr(f"{nome_file}.pdf", pdf_file.read())
-
-                            os.remove(pdf_path)
                     
                     zip_buffer.seek(0)
                     st.download_button(
@@ -279,8 +244,8 @@ def main():
                         file_name="documenti_generati.zip",
                         mime="application/zip"
                     )
-            else:
-                st.warning("Seleziona almeno un codice soggetto prima di generare i documenti.")
+                else:
+                    st.warning("Seleziona almeno un codice soggetto prima di generare i documenti.")
     else:
         login()
 

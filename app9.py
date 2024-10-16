@@ -8,7 +8,7 @@ import numpy as np
 
 # Dati di accesso predefiniti
 DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "admin"
+DEFAULT_PASSWORD = "Carotenuto24!"
 
 # Inizializza le variabili di sessione
 if 'authenticated' not in st.session_state:

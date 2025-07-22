@@ -204,6 +204,11 @@ def main():
                 df1 = df1.rename(columns={"codice_soggetto": "codice_soggetto"})
                 df2 = df2.rename(columns={"bpartner": "codice_soggetto"})
                 df3 = df3.rename(columns={"soggetto": "codice_soggetto"})
+                # Formattazione del campo data_reg in tutti i dataframe che lo contengono
+                for df in [df1, df2, df3]:
+                    if 'data_reg' in df.columns:
+                        df['data_reg'] = pd.to_datetime(df['data_reg'], errors='coerce').dt.strftime('%d/%m/%Y')
+
             except KeyError as e:
                 st.error(f"Errore durante la rinominazione delle colonne: {e}")
                 return
